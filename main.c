@@ -5,7 +5,7 @@
 //how many bites
 #define HEAP_CAP 640000
 //how many chunks
-#define CHUNK_LIST_CUP 1024
+#define CHUNK_LIST_CAP 1024
 
 #define UNIMPLEMENTED()\
 do{\
@@ -28,8 +28,8 @@ typedef struct
 typedef struct 
 {
     //when del heap, we will set this to be 0
-    size_t size;
-    Chunk chunks[CHUNK_LIST_CUP];
+    size_t count;
+    Chunk chunks[CHUNK_LIST_CAP];
 }Chunk_List;
 
 
@@ -50,13 +50,14 @@ Chunk_List alloced_chunks;
 // Heap_Chunk heap_freed[HEAP_FREEDED_CAP]={0};
 // size_t heap_freed_size;
 //------ V0: ----------
-Chunk_List freeded_chunks;
+Chunk_List freed_chunks;
 
 
+//print all chunks in chunk list
 void chunk_list_dump(const Chunk_List* list)
 {
-    printf("Allocated Chunks (%zu):\n", list->size);
-    for(size_t i=0; i<list->size; i++)
+    printf("Allocated Chunks (%zu):\n", list->count);
+    for(size_t i=0; i<list->count; i++)
     {
         printf("    start: %p, size: %zu\n", list->chunks[i].start,
         list->chunks[i].size);
@@ -65,25 +66,45 @@ void chunk_list_dump(const Chunk_List* list)
 
 int chunk_list_find(const Chunk_List *list, void* ptr)
 {
-    (void)list;
-    (void) ptr;
-    UNIMPLEMENTED();
+    // (void)list;
+    // (void) ptr;
+    // UNIMPLEMENTED();
+    for (size_t i = 0; i < list->count; ++i) {
+        if (list->chunks[i].start == ptr) {
+            return (int) i;
+        }
+    }
     return -1;
 }
 
-void chunk_list_insert(const Chunk_List *list, void* ptr, size_t size)
+//insert chunk in chunklist( called  when alloc// or free(insert into freeded))
+void chunk_list_insert(Chunk_List *list, void* start, size_t size)
 {
-    (void)list;
-    (void)ptr;
-    (void)size;
-    UNIMPLEMENTED();
+    // insert the new chunk
+    assert(list->count < CHUNK_LIST_CAP);
+    list->chunks[list->count].start = start;
+    list->chunks[list->count].size  = size;
+    //sort the chunk list 
+    for (size_t i = list->count;
+            i > 0 && list->chunks[i].start < list->chunks[i - 1].start;
+            --i) {
+        const Chunk t = list->chunks[i];
+        list->chunks[i] = list->chunks[i - 1];
+        list->chunks[i - 1] = t;
+    }
+    list->count += 1;
 }
 
-void chunk_list_remove(const Chunk_List *list, int index)
+void chunk_list_remove(Chunk_List *list, size_t index)
 {
-    (void)list;
-    (void)index;
-    UNIMPLEMENTED();
+    assert(index < list->count);
+    for (size_t i = index; i < list->count - 1; ++i) {
+        list->chunks[i] = list->chunks[i + 1];
+    }
+    list->count -= 1;
+    // (void)list;
+    // (void)index;
+    // UNIMPLEMENTED();
 }
 
 
@@ -100,27 +121,11 @@ void *heap_alloc(size_t size)
         //1. simple allocation
         //check boundary
         assert(heap_size+size<=HEAP_CAP);
-        //allocate the space
+        //allocate the space: by moving the ptr forward
         void *ptr=heap+heap_size;
         //update size
         heap_size += size;
-
-        //2. update alloced chunk table
-
-
-        //------ V0: ----------
-        // Chunk chunk = {
-        //     .start=ptr,
-        //     .size = size
-        // };
-
-        // assert(heap_alloced_size+1<HEAP_ALLOCED_CAP);
-        // heap_alloced[heap_alloced_size++]=chunk;
-        //------ V0: ----------
-        //---v1
         chunk_list_insert(&alloced_chunks, ptr, size);
-        
-
         return ptr;
     }
     else
@@ -133,16 +138,17 @@ void *heap_alloc(size_t size)
 //free memory
 void heap_free(void *ptr)
 {
-    (void)ptr; 
-    // //scan the alloced table to get empty space
-    // for(size_t i=0; i<heap_alloced_size; ++i)
-    // {
-    //     if(heap_alloced[i].start==ptr)
-    //     {
-            
-    //     }
-    // }
-    assert(false&&"TODO: heap free hasn't been implemented!");
+    // (void)ptr; 
+     if (ptr != NULL) {
+        const int index = chunk_list_find(&alloced_chunks, ptr);
+        assert(index >= 0);
+        assert(ptr == alloced_chunks.chunks[index].start);
+        chunk_list_insert(&freed_chunks,
+                          alloced_chunks.chunks[index].start,
+                          alloced_chunks.chunks[index].size);
+        chunk_list_remove(&alloced_chunks, (size_t) index);
+    }
+    // assert(false&&"TODO: heap free hasn't been implemented!");
 }
 
 //3.gc scan the pointer instead of heap itself
@@ -168,11 +174,14 @@ int main()
 
     //v2 alloc a bunch of chunks
     //WARNING!: heap_alloc(0) is dump!
-    for(int i=0; i<100; i++)
+    for(int i=0; i<20; i++)
     {
-        heap_alloc(i);
+        void *p = heap_alloc(i);
+        if(i%2==0)
+            heap_free(p);
     }
-    //chunk_list_dump();
+    chunk_list_dump(&alloced_chunks);
+    chunk_list_dump(&freed_chunks);
     return 0;
 }
 
